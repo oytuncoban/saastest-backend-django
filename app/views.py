@@ -1,8 +1,9 @@
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate, login, logout
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.core import serializers
 from .models import *
+from .test_scripts import *
 import json
 
 # Create your views here.
@@ -200,3 +201,46 @@ def Logout(request):
         return HttpResponse("logged out", status=200)
 
     return HttpResponse("logged out", status=200)
+
+@csrf_exempt
+def RunTestDiscrete(request):
+    if request.user.is_authenticated:
+        if request.method == "POST":
+            try:
+                raw = json.loads(request.body)
+                testId = int(raw["test_id"])
+                alpha = int(raw["alpha"])
+            except:
+                return HttpResponse("requestIsInvalid", status=400)
+
+            try:
+                test = Test.objects.get(id=testId)
+            except:
+                return HttpResponse("TestNotFound", status=404)
+            
+            try:
+                testdata = list(test.discretemetricdata_set.sort_by("dateTime").all())
+                df= pd.DataFrame.from_records(testdata)
+                sample_size =testdata.count()
+                contingency_table = pd.crosstab(df['variant'], df['metric'])
+                if sample_size > 1000:
+                    p_val=chi_square_test(contingency_table)
+                else:
+                    p_val=fisher_pval(contingency_table)
+                conversion_rates = contingency_table[1] / contingency_table.sum(axis=1) * 100
+                response_data = {
+                    'data':testdata,
+                    'p_val':p_val,
+                    'sample_size':sample_size,
+                    'conv_rate_a':conversion_rates['A'],
+                    'conv_rate_b':conversion_rates['B'],
+                    'mean':df['metric'].mean(),
+                    'median':df['metric'].median(),
+                }
+            except Exception as e:
+                print(e)
+                return HttpResponse("ErrorWhileCreateObject", status=500)
+            return JsonResponse(response_data, status=200)
+        else:
+            return HttpResponse("requestIsInvalid", status=400)
+    return HttpResponse("UnAuthorized", status=401)
