@@ -2,9 +2,16 @@ from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate, login, logout
 from django.http import HttpResponse, JsonResponse
 from django.core import serializers
+
+from app.utils import generate_api_key
 from .models import *
 from .test_scripts import *
 import json
+import bcrypt
+import random
+import string
+from django.shortcuts import HttpResponse
+from .models import ApiKey
 
 # Create your views here.
 
@@ -178,6 +185,39 @@ def AddRowContinuous(request):
         else:
             return HttpResponse("requestIsInvalid", status=400)
     return HttpResponse("UnAuthorized", status=401)
+
+
+
+# /api/v1/create_api_key
+def CreateApiKey(request):
+    if not request.user.is_authenticated:
+        return HttpResponse("UnAuthorized", status=401)
+    if request.method == "POST":
+        prefix, new_token= generate_api_key()
+
+        # Save the generated token to the database
+        api_key = ApiKey(key=new_token, prefix=prefix)
+        api_key.save()
+
+        return HttpResponse("API Key generated successfully!")
+
+    return HttpResponse("Invalid request method")
+
+
+# /api/v1/delete_api_key/<str:prefix>
+def DeleteApiKey(request, prefix):
+    if not request.user.is_authenticated:
+        return HttpResponse("UnAuthorized", status=401)
+    if request.method == "DELETE":
+        try:
+            api_key = ApiKey.objects.get(prefix=prefix)
+        except:
+            return HttpResponse("ApiKeyNotFound", status=404)
+        api_key.delete()
+        return HttpResponse("200", status=200)
+    else:
+        return HttpResponse("requestIsInvalid", status=400)
+
 
 
 @csrf_exempt
