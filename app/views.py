@@ -13,9 +13,6 @@ import string
 from django.shortcuts import HttpResponse
 from .models import ApiKey
 
-# Create your views here.
-
-
 # /api/v1/users
 @csrf_exempt
 def Users(request):
@@ -220,6 +217,7 @@ def DeleteApiKey(request, prefix):
 
 
 
+# /api/v1/login
 @csrf_exempt
 def Login(request):
     username = request.POST.get("username")
@@ -234,6 +232,7 @@ def Login(request):
     return HttpResponse("logged in", status=200)
 
 
+# /api/v1/logout
 @csrf_exempt
 def Logout(request):
     if request.user.is_authenticated:
@@ -242,6 +241,7 @@ def Logout(request):
 
     return HttpResponse("logged out", status=200)
 
+# /api/v1/run_test_discrete
 @csrf_exempt
 def RunTestDiscrete(request):
     if request.user.is_authenticated:
@@ -288,6 +288,8 @@ def RunTestDiscrete(request):
             return HttpResponse("requestIsInvalid", status=400)
     return HttpResponse("UnAuthorized", status=401)
 
+
+# /api/v1/run_test_continuous
 @csrf_exempt
 def RunTestContinuous(request):
     if request.user.is_authenticated:

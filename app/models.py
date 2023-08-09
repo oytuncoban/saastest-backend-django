@@ -7,10 +7,10 @@ class ApiKey(models.Model):
     key = models.CharField(max_length = 255)
     prefix = models.CharField(max_length = 255)
     name = models.CharField(max_length = 255)
-    
 
     def __str__(self):
-        return self.key
+        return self.prefix
+    
 class Test(models.Model):
     user = models.ForeignKey(User,on_delete = models.CASCADE)
     name = models.CharField(max_length = 255)
