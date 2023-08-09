@@ -3,7 +3,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.http import HttpResponse, JsonResponse
 from django.core import serializers
 
-from app.utils import generate_api_key
+from app.utils import check_api_key, check_auth, generate_api_key, is_authenticated
 from .models import *
 from .test_scripts import *
 import json
@@ -16,6 +16,8 @@ from .models import ApiKey
 # /api/v1/users
 @csrf_exempt
 def Users(request):
+    if request.user.is_superuser == False:
+        return HttpResponse("UnAuthorized", status=401)
     if request.method == "GET":
         try:
             users = User.objects.all()
@@ -41,6 +43,8 @@ def Users(request):
 # /api/v1/users/<int:user_id>
 @csrf_exempt
 def Users(request, user_id):
+    if request.user.is_superuser == False:
+        return HttpResponse("UnAuthorized", status=401)
     if request.method == "GET":
         try:
             user = User.objects.get(id=user_id)
@@ -108,9 +112,13 @@ def AddRowDiscrete(request):
 # /api/v1/tests
 @csrf_exempt
 def GetTests(request):
+    if is_authenticated(request) == False:
+        return HttpResponse("UnAuthorized", status=401)
     if request.method == "GET":
         try:
-            tests = serializers.serialize("json", Test.objects.all())
+            # get tests by user_id
+            tests = Test.objects.filter(user=request.user)
+            tests = serializers.serialize("json", tests)
         except:
             return HttpResponse("ErrorWhileGetTests", status=500)
         return HttpResponse(tests, status=200)
@@ -120,6 +128,7 @@ def GetTests(request):
             userId = int(raw["user_id"])
             name = str(raw["name"])
             type = str(raw["type"])
+            alpha = str(raw["alpha"])
         except:
             return HttpResponse("requestIsInvalid", status=400)
 
@@ -128,7 +137,7 @@ def GetTests(request):
         except:
             return HttpResponse("UserNotFound", status=404)
         try:
-            Test(user=user, name=name, type=type).save()
+            Test(user=user, name=name, type=type, alpha=alpha).save()
         except Exception as e:
             print(e)
             return HttpResponse("ErrorWhileCreateObject", status=500)
@@ -138,9 +147,14 @@ def GetTests(request):
 # /api/v1/tests/<int:test_id>
 @csrf_exempt
 def GetTestById(request, test_id):
+    if(is_authenticated(request) == False):
+        return HttpResponse("UnAuthorized", status=401)
     if request.method == "GET":
         try:
             test = Test.objects.get(id=test_id)
+            # check if user is authorized to see this test
+            if test.user != request.user:
+                return HttpResponse("UnAuthorized", status=401)
             test = serializers.serialize("json", test)
         except:
             return HttpResponse("TestNotFound", status=404)
@@ -159,7 +173,7 @@ def GetTestById(request, test_id):
 # /api/v1/add_row_continuous
 @csrf_exempt
 def AddRowContinuous(request):
-    if request.user.is_authenticated:
+    if is_authenticated(request):
         if request.method == "POST":
             try:
                 raw = json.loads(request.body)

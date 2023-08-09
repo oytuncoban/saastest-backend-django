@@ -47,5 +47,3 @@ def check_auth(is_user_authenticated, is_api_key_valid):
         return True
     else:
         return False
-      
-
