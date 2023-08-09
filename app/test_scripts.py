@@ -1,28 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy.special import binom
-from scipy.stats import chi2_contingency, mannwhitneyu, norm, t, ttest_ind, shapiro
-
-np.random.seed(42)
-
-x = np.random.binomial(n=1, p=0.6, size=15)
-y = np.random.binomial(n=1, p=0.4, size=19)
-
-_, (a, c) = np.unique(x, return_counts=True)
-_, (b, d) = np.unique(y, return_counts=True)
-
-df = pd.DataFrame(
-    data=[[a, b], [c, d]], index=["click", "no click"], columns=["A", "B"]
-)
-m = df.values
-
-print("- Observations:")
-print(f"  - Version A: = {x}")
-print(f"  - Version B: = {y}")
-print("")
-print("- Contingency table:")
-print(df)
-
+from scipy.stats import chi2_contingency, mannwhitneyu, norm, t, ttest_ind, shapiro, fisher_exact
 
 def hypergeom(k, K, n, N):
     """Probability mass funciton of the hypergeometric distribution."""
@@ -51,14 +30,13 @@ def fisher_probs_histogram(m):
 
 
 def fisher_pval(m):
-    bars_h = np.array(fisher_probs_histogram(m))
-    idxs = bars_h <= fisher_prob(m)
-    p_val = bars_h[idxs].sum()
+    _, p_val = fisher_exact(m)
     return p_val
 
 
 def chi_square_test(m):
-    return chi2_contingency(m, correction=False)[:2]
+    (chi2, p) = chi2_contingency(m, correction=False)[:2]
+    return p
 
 
 def perform_t_test(df):

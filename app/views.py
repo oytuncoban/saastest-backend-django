@@ -259,14 +259,17 @@ def RunTestDiscrete(request):
                 return HttpResponse("TestNotFound", status=404)
             
             try:
-                testdata = list(test.discretemetricdata_set.sort_by("dateTime").all())
-                df= pd.DataFrame.from_records(testdata)
-                sample_size =testdata.count()
-                contingency_table = pd.crosstab(df['variant'], df['metric'])
-                if sample_size > 1000:
+                testdata = list(test.discretemetricdata_set.sort_by("dateTime").all()) # Get data sorted by date
+                df= pd.DataFrame.from_records(testdata) # Convert to dataframe
+                contingency_table = pd.crosstab(df['variant'], df['metric']) # Create contingency table
+                all_cells_greater_than_5 = (contingency_table > 5).all().all() # Check if all cells are greater than 5
+                if all_cells_greater_than_5:
                     p_val=chi_square_test(contingency_table)
                 else:
                     p_val=fisher_pval(contingency_table)
+
+
+                sample_size =testdata.count()
                 conversion_rates = contingency_table[1] / contingency_table.sum(axis=1) * 100
                 response_data = {
                     'data':testdata,
@@ -274,6 +277,47 @@ def RunTestDiscrete(request):
                     'sample_size':sample_size,
                     'conv_rate_a':conversion_rates['A'],
                     'conv_rate_b':conversion_rates['B'],
+                    'mean':df['metric'].mean(),
+                    'median':df['metric'].median(),
+                }
+            except Exception as e:
+                print(e)
+                return HttpResponse("ErrorWhileCreateObject", status=500)
+            return JsonResponse(response_data, status=200)
+        else:
+            return HttpResponse("requestIsInvalid", status=400)
+    return HttpResponse("UnAuthorized", status=401)
+
+@csrf_exempt
+def RunTestContinuous(request):
+    if request.user.is_authenticated:
+        if request.method == "POST":
+            try:
+                raw = json.loads(request.body)
+                testId = int(raw["test_id"])
+                alpha = int(raw["alpha"])
+            except:
+                return HttpResponse("requestIsInvalid", status=400)
+
+            try:
+                test = Test.objects.get(id=testId)
+            except:
+                return HttpResponse("TestNotFound", status=404)
+            
+            try:
+                testdata = list(test.continuousmetricdata_set.sort_by("dateTime").all()) # Get data sorted by date
+                df= pd.DataFrame.from_records(testdata) # Convert to dataframe
+                group_a = df[df['variant'] == 'A']['metric'].dropna()
+                group_b = df[df['variant'] == 'B']['metric'].dropna()
+                if is_normal(df,group_a,alpha=alpha) and is_normal(df,group_b,alpha=alpha):
+                    p_val = perform_welch_t_test(df)
+                else:
+                    p_val = perform_mann_whitney_u_test(df)
+                sample_size =testdata.count()
+                response_data = {
+                    'data':testdata,
+                    'p_val':p_val,
+                    'sample_size':sample_size,
                     'mean':df['metric'].mean(),
                     'median':df['metric'].median(),
                 }
