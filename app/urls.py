@@ -13,5 +13,7 @@ urlpatterns = [
     path("api/v1/add_row_discrete", AddRowDiscrete, name="AddRowDiscrete"),
     path("api/v1/run_test_discrete", RunTestDiscrete, name="RunTestDiscrete"),
     path("api/v1/run_test_continuous", RunTestContinuous, name="RunTestContinuous"),
+    path("api/v1/add_continous_bulk", AddContinousBulk, name="AddContinousBulk"),
+    path("api/v1/add_discrete_bulk", AddDiscreteBulk, name="AddDiscreteBulk"),
 ]
 

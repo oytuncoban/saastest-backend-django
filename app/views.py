@@ -1,3 +1,4 @@
+import csv
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate, login, logout
 from django.http import HttpResponse, JsonResponse
@@ -12,6 +13,8 @@ import random
 import string
 from django.shortcuts import HttpResponse
 from .models import ApiKey
+from django.http import JsonResponse
+
 
 # /api/v1/users
 @csrf_exempt
@@ -344,3 +347,53 @@ def RunTestContinuous(request):
         else:
             return HttpResponse("requestIsInvalid", status=400)
     return HttpResponse("UnAuthorized", status=401)
+
+
+# /api/v1/add_continous_bulk
+@csrf_exempt
+def AddContinousBulk(request):
+    # Check for authentication
+    if not is_authenticated(request):
+        return HttpResponse("UnAuthorized", status=401)
+
+
+    # Check if a file is uploaded
+    if 'file' not in request.FILES:
+        return HttpResponse("No file uploaded!", status=400)
+
+
+    if request.method == "POST" or request.method == "PATCH":
+        file = request.FILES['file']
+        decoded_file = file.read().decode('utf-8').splitlines()
+        reader = csv.DictReader(decoded_file)
+
+        data_list = [ContinuousMetricData(test_id=row['test_id'], variant=row['variant'], metric=row['metric']) for row in reader]
+        ContinuousMetricData.objects.bulk_create(data_list)
+
+        return JsonResponse({"message": "Data added successfully."}, status=201)
+    # return internal server error HttpResponse
+    return HttpResponse("Internal Server Error", status=500)
+
+# /api/v1/add_discrete_bulk
+@csrf_exempt
+def AddDiscreteBulk(request):
+    # Check for authentication
+    if not is_authenticated(request):
+        return HttpResponse("UnAuthorized", status=401)
+
+
+    # Check if a file is uploaded
+    if 'file' not in request.FILES:
+        return HttpResponse("No file uploaded!", status=400)
+
+    if request.method == "POST" or request.method == "PATCH":
+
+        file = request.FILES['file']
+        decoded_file = file.read().decode('utf-8').splitlines()
+        reader = csv.DictReader(decoded_file)
+
+        data_list = [DiscreteMetricData(test_id=row['test_id'], variant=row['variant'], metric=row['metric']) for row in reader]
+        DiscreteMetricData.objects.bulk_create(data_list)
+
+        return JsonResponse({"message": "Data added successfully."}, status=201)
+    return HttpResponse("Internal Server Error", status=500)
