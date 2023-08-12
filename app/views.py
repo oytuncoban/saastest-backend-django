@@ -3,6 +3,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate, login, logout
 from django.http import HttpResponse, JsonResponse
 from django.core import serializers
+import datetime
 
 from app.utils import check_api_key, check_auth, generate_api_key, is_authenticated
 from .models import *
@@ -264,9 +265,10 @@ def RunTestDiscrete(request):
     if request.user.is_authenticated:
         if request.method == "POST":
             try:
+                print(json.loads(request.body))
                 raw = json.loads(request.body)
                 testId = int(raw["test_id"])
-                alpha = int(raw["alpha"])
+                alpha = float(raw["alpha"])
             except:
                 return HttpResponse("requestIsInvalid", status=400)
 
@@ -276,8 +278,8 @@ def RunTestDiscrete(request):
                 return HttpResponse("TestNotFound", status=404)
             
             try:
-                testdata = list(test.discretemetricdata_set.sort_by("dateTime").all()) # Get data sorted by date
-                df= pd.DataFrame.from_records(testdata) # Convert to dataframe
+                testdata = list(test.discretemetricdata_set.all().values()) 
+                df= pd.DataFrame(testdata) # Convert to dataframe
                 contingency_table = pd.crosstab(df['variant'], df['metric']) # Create contingency table
                 all_cells_greater_than_5 = (contingency_table > 5).all().all() # Check if all cells are greater than 5
                 if all_cells_greater_than_5:
@@ -286,7 +288,7 @@ def RunTestDiscrete(request):
                     p_val=fisher_pval(contingency_table)
 
 
-                sample_size =testdata.count()
+                sample_size =len(testdata)
                 conversion_rates = contingency_table[1] / contingency_table.sum(axis=1) * 100
                 response_data = {
                     'data':testdata,
@@ -328,14 +330,21 @@ def RunTestContinuous(request):
                 df= pd.DataFrame.from_records(testdata) # Convert to dataframe
                 group_a = df[df['variant'] == 'A']['metric'].dropna()
                 group_b = df[df['variant'] == 'B']['metric'].dropna()
+                t_score=None
                 if is_normal(df,group_a,alpha=alpha) and is_normal(df,group_b,alpha=alpha):
-                    p_val = perform_welch_t_test(df)
+                    if check_variances(group_a,group_b):
+                        t_score,p_val = perform_t_test(group_a, group_b)
+                    else:    
+                        t_score,p_val = perform_welch_t_test(df)
                 else:
-                    p_val = perform_mann_whitney_u_test(df)
+                    p_val = perform_mann_whitney_u_test(group_a, group_b)
+                    mean_a = np.mean(rankdata(group_a))
+                    mean_b = np.mean(rankdata(group_b))
                 sample_size =testdata.count()
                 response_data = {
                     'data':testdata,
                     'p_val':p_val,
+                    't_score':t_score, # Only for t-test
                     'sample_size':sample_size,
                     'mean':df['metric'].mean(),
                     'median':df['metric'].median(),
@@ -389,10 +398,12 @@ def AddDiscreteBulk(request):
     if request.method == "POST" or request.method == "PATCH":
 
         file = request.FILES['file']
-        decoded_file = file.read().decode('utf-8').splitlines()
-        reader = csv.DictReader(decoded_file)
+        lines = file.read().splitlines()
+        reader = csv.DictReader(line.decode('utf-8') for line in lines)
 
-        data_list = [DiscreteMetricData(test_id=row['test_id'], variant=row['variant'], metric=row['metric']) for row in reader]
+
+        data_list = [DiscreteMetricData(test_id=row['test_id'], variant=row['variant'], metric=row['metric'],dateTime=datetime.datetime.now()) for row in reader]
+        print(data_list)
         DiscreteMetricData.objects.bulk_create(data_list)
 
         return JsonResponse({"message": "Data added successfully."}, status=201)

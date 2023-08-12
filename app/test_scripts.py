@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy.special import binom
-from scipy.stats import chi2_contingency, mannwhitneyu, norm, t, ttest_ind, shapiro, fisher_exact
+from scipy.stats import chi2_contingency, mannwhitneyu, norm, t, ttest_ind, shapiro, fisher_exact, levene, rankdata
 
 def hypergeom(k, K, n, N):
     """Probability mass funciton of the hypergeometric distribution."""
@@ -39,28 +39,28 @@ def chi_square_test(m):
     return p
 
 
-def perform_t_test(df):
+def perform_t_test(group_a, group_b):
     # Perform the t-test
     t_score, p_value = ttest_ind(
-        df["A"], df["B"], nan_policy="omit"
+        group_a, group_b, nan_policy="omit"
     )  # 'omit' to exclude any NaN values
 
-    return p_value
+    return t_score, p_value
 
 
-def perform_welch_t_test(df):
+def perform_welch_t_test(group_a, group_b):
     # Perform the Welch's t-test
     t_score, p_value = ttest_ind(
-        df["A"], df["B"], equal_var=False, nan_policy="omit"
+        group_a, group_b, equal_var=False, nan_policy="omit"
     )  # 'omit' to exclude any NaN values
 
-    return p_value
+    return t_score, p_value
 
 
-def perform_mann_whitney_u_test(df):
+def perform_mann_whitney_u_test(group_a, group_b):
     # Perform the Mann-Whitney U test
     u_score, p_value = mannwhitneyu(
-        df["A"], df["B"], alternative="two-sided"
+        group_a, group_b, alternative="two-sided"
     )  # 'two-sided' for a two-sided test
 
     return p_value
@@ -78,3 +78,7 @@ def is_normal(df, column, alpha=0.05):
     stat, p_value = shapiro(df[column])
 
     return p_value > alpha
+
+def check_variances(group_a,group_b, alpha=0.05):
+    stat, p_lev = levene(group_a,group_b)
+    return p_lev > alpha
