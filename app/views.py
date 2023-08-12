@@ -5,7 +5,7 @@ from django.http import HttpResponse, JsonResponse
 from django.core import serializers
 import datetime
 
-from app.utils import check_api_key, check_auth, generate_api_key, is_authenticated
+from app.utils import check_api_key, check_auth, generate_api_key, is_authenticated, user_json
 from .models import *
 from .test_scripts import *
 import json
@@ -64,27 +64,8 @@ def Users(request, user_id):
         return HttpResponse("200", status=200)
     else:
         return HttpResponse("requestIsInvalid", status=400)
-
-
-# /api/v1/register
-@csrf_exempt
-def Register(request):
-    if request.method == "POST":
-        try:
-            raw = json.loads(request.body)
-            username = str(raw["username"])
-            password = str(raw["password"])
-        except:
-            return HttpResponse("requestIsInvalid", status=400)
-
-        try:
-            User.objects.create_user(username=username, password=password)
-        except Exception as e:
-            print(e)
-            return HttpResponse("ErrorWhileCreateObject", status=500)
-    return HttpResponse("200", status=200)
-
-
+    
+    
 # /api/v1/add_row_discrete
 @csrf_exempt
 def AddRowDiscrete(request):
@@ -235,19 +216,89 @@ def DeleteApiKey(request, prefix):
 
 
 
-# /api/v1/login
+# /api/v1/auth/register
+@csrf_exempt
+def Register(request):
+    if request.method == "POST":
+        try:
+            raw = json.loads(request.body)
+            username = str(raw["username"])
+            email = str(raw["email"])
+            name = str(raw["name"])
+            surname = str(raw["surname"])
+            password = str(raw["password"])
+        except:
+            return HttpResponse("requestIsInvalid", status=400)
+
+        try:
+            User.objects.create_user(username=username, email=email, first_name=name, last_name=surname, password=password)
+        except Exception as e:
+            print(e)
+            return HttpResponse("ErrorWhileCreateObject", status=500)
+    return HttpResponse("200", status=200)
+
+
+
+# /api/v1/auth/login
 @csrf_exempt
 def Login(request):
-    username = request.POST.get("username")
-    password = request.POST.get("password")
-    user = authenticate(request, username=username, password=password)
-    if not request.user.is_authenticated:
-        if user is not None:
-            login(request, user)
-            return HttpResponse("logged in", status=200)
-        else:
-            return HttpResponse("UserNotFound", status=401)
-    return HttpResponse("logged in", status=200)
+    if(request.method != "POST"):
+        return HttpResponse("requestIsInvalid", status=400)
+    
+    raw = json.loads(request.body)
+    email = raw["email"]
+    password = raw["password"]
+    
+    try:
+        user = User.objects.get(email=email)
+    except:
+        return HttpResponse("UserNotFound", status=404)
+    
+    user_auth = authenticate(request, username=user.username, password=password)
+    if user_auth is not None:
+        login(request, user)
+        # Constructing a dictionary with desired user attributes
+        user_data = {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'is_active': user.is_active,
+            'is_staff': user.is_staff,
+            'is_superuser': user.is_superuser
+        }
+        return JsonResponse(user_data, status=200)
+    else:
+        return HttpResponse("UserNotFound", status=401)
+
+
+# /api/v1/auth/me
+def Me(request):
+    if(request.method != "GET"):
+        return HttpResponse("Invalid Request", status=405)
+    if(request.user.is_authenticated != True):
+        return HttpResponse("UnAuthorized", status=401)
+    try:
+        user = User.objects.get(username=request.user.username)
+        user = user_json(user)
+        return JsonResponse(user, status=200)
+    except:
+        return HttpResponse("UserNotFound", status=404)
+    
+
+    user_data = {
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'is_active': user.is_active,
+        'is_staff': user.is_staff,
+        'is_superuser': user.is_superuser
+    }
+    return JsonResponse(user_data, status=200)
+
 
 
 # /api/v1/logout
@@ -255,9 +306,9 @@ def Login(request):
 def Logout(request):
     if request.user.is_authenticated:
         logout(request)
-        return HttpResponse("logged out", status=200)
+        return HttpResponse("Succesfully logged out.", status=200)
 
-    return HttpResponse("logged out", status=200)
+    return HttpResponse("Already logged out.", status=200)
 
 # /api/v1/run_test_discrete
 @csrf_exempt

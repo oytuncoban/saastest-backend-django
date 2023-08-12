@@ -47,3 +47,16 @@ def check_auth(is_user_authenticated, is_api_key_valid):
         return True
     else:
         return False
+    
+    
+def user_json(user):
+    return {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'is_active': user.is_active,
+            'is_staff': user.is_staff,
+            'is_superuser': user.is_superuser
+        }
