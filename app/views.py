@@ -5,7 +5,17 @@ from django.http import HttpResponse, JsonResponse
 from django.core import serializers
 import datetime
 
-from app.utils import check_api_key, check_auth, generate_api_key, is_authenticated, user_json
+from app.utils import (
+    check_api_key,
+    check_auth,
+    data_json,
+    generate_api_key,
+    is_authenticated,
+    run_discrete_test,
+    test_json,
+    test_json_brief,
+    user_json,
+)
 from .models import *
 from .test_scripts import *
 import json
@@ -64,8 +74,8 @@ def Users(request, user_id):
         return HttpResponse("200", status=200)
     else:
         return HttpResponse("requestIsInvalid", status=400)
-    
-    
+
+
 # /api/v1/add_row_discrete
 @csrf_exempt
 def AddRowDiscrete(request):
@@ -103,14 +113,13 @@ def GetTests(request):
         try:
             # get tests by user_id
             tests = Test.objects.filter(user=request.user)
-            tests = serializers.serialize("json", tests)
+            tests = [test_json_brief(test) for test in tests]
         except:
             return HttpResponse("ErrorWhileGetTests", status=500)
-        return HttpResponse(tests, status=200)
+        return JsonResponse({'tests': tests}, status=200)
     elif request.method == "POST":
         try:
             raw = json.loads(request.body)
-            userId = int(raw["user_id"])
             name = str(raw["name"])
             type = str(raw["type"])
             alpha = str(raw["alpha"])
@@ -118,7 +127,7 @@ def GetTests(request):
             return HttpResponse("requestIsInvalid", status=400)
 
         try:
-            user = User.objects.get(id=userId)
+            user = User.objects.get(id=request.user.id)
         except:
             return HttpResponse("UserNotFound", status=404)
         try:
@@ -132,7 +141,7 @@ def GetTests(request):
 # /api/v1/tests/<int:test_id>
 @csrf_exempt
 def GetTestById(request, test_id):
-    if(is_authenticated(request) == False):
+    if is_authenticated(request) == False:
         return HttpResponse("UnAuthorized", status=401)
     if request.method == "GET":
         try:
@@ -140,10 +149,23 @@ def GetTestById(request, test_id):
             # check if user is authorized to see this test
             if test.user != request.user:
                 return HttpResponse("UnAuthorized", status=401)
-            test = serializers.serialize("json", test)
-        except:
+
+            if  test.discretemetricdata_set.count() <= 0:
+                return JsonResponse(test_json(test), status=200)
+
+            test_result = None
+            if test.type == "discrete" :
+                test_data = list([data_json(data) for data in test.discretemetricdata_set.all()])
+                test_result = run_discrete_test(test_data, test.alpha)
+                test_response = test_json(test, test_data, test_result)
+            else:
+                # Handle contionus here
+                test_response = test_json(test)
+
+        except Exception as error:
+            print(error)
             return HttpResponse("TestNotFound", status=404)
-        return HttpResponse(test, status=200)
+        return JsonResponse(test_response, status=200)
     elif request.method == "DELETE":
         try:
             test = Test.objects.get(id=test_id)
@@ -183,13 +205,12 @@ def AddRowContinuous(request):
     return HttpResponse("UnAuthorized", status=401)
 
 
-
-# /api/v1/create_api_key
+# /api/v1/create_api_key
 def CreateApiKey(request):
     if not request.user.is_authenticated:
         return HttpResponse("UnAuthorized", status=401)
     if request.method == "POST":
-        prefix, new_token= generate_api_key()
+        prefix, new_token = generate_api_key()
 
         # Save the generated token to the database
         api_key = ApiKey(key=new_token, prefix=prefix)
@@ -200,7 +221,7 @@ def CreateApiKey(request):
     return HttpResponse("Invalid request method")
 
 
-# /api/v1/delete_api_key/<str:prefix>
+# /api/v1/delete_api_key/<str:prefix>
 def DeleteApiKey(request, prefix):
     if not request.user.is_authenticated:
         return HttpResponse("UnAuthorized", status=401)
@@ -213,7 +234,6 @@ def DeleteApiKey(request, prefix):
         return HttpResponse("200", status=200)
     else:
         return HttpResponse("requestIsInvalid", status=400)
-
 
 
 # /api/v1/auth/register
@@ -231,53 +251,49 @@ def Register(request):
             return HttpResponse("requestIsInvalid", status=400)
 
         try:
-            User.objects.create_user(username=username, email=email, first_name=name, last_name=surname, password=password)
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                first_name=name,
+                last_name=surname,
+                password=password,
+            )
+            return HttpResponse(JsonResponse(user_json(user)), status=200)
         except Exception as e:
             print(e)
             return HttpResponse("ErrorWhileCreateObject", status=500)
     return HttpResponse("200", status=200)
 
 
-
 # /api/v1/auth/login
 @csrf_exempt
 def Login(request):
-    if(request.method != "POST"):
+    if request.method != "POST":
         return HttpResponse("requestIsInvalid", status=400)
-    
+
     raw = json.loads(request.body)
     email = raw["email"]
     password = raw["password"]
-    
+
     try:
         user = User.objects.get(email=email)
-    except:
+    except Exception as e:
+        print(e)
         return HttpResponse("UserNotFound", status=404)
-    
+
     user_auth = authenticate(request, username=user.username, password=password)
     if user_auth is not None:
         login(request, user)
-        # Constructing a dictionary with desired user attributes
-        user_data = {
-            'id': user.id,
-            'username': user.username,
-            'email': user.email,
-            'first_name': user.first_name,
-            'last_name': user.last_name,
-            'is_active': user.is_active,
-            'is_staff': user.is_staff,
-            'is_superuser': user.is_superuser
-        }
-        return JsonResponse(user_data, status=200)
+        return JsonResponse(user_json(user), status=200)
     else:
-        return HttpResponse("UserNotFound", status=401)
+        return HttpResponse("Incorrect Credentials!", status=401)
 
 
 # /api/v1/auth/me
 def Me(request):
-    if(request.method != "GET"):
+    if request.method != "GET":
         return HttpResponse("Invalid Request", status=405)
-    if(request.user.is_authenticated != True):
+    if request.user.is_authenticated != True:
         return HttpResponse("UnAuthorized", status=401)
     try:
         user = User.objects.get(username=request.user.username)
@@ -285,20 +301,6 @@ def Me(request):
         return JsonResponse(user, status=200)
     except:
         return HttpResponse("UserNotFound", status=404)
-    
-
-    user_data = {
-        'id': user.id,
-        'username': user.username,
-        'email': user.email,
-        'first_name': user.first_name,
-        'last_name': user.last_name,
-        'is_active': user.is_active,
-        'is_staff': user.is_staff,
-        'is_superuser': user.is_superuser
-    }
-    return JsonResponse(user_data, status=200)
-
 
 
 # /api/v1/logout
@@ -307,8 +309,9 @@ def Logout(request):
     if request.user.is_authenticated:
         logout(request)
         return HttpResponse("Succesfully logged out.", status=200)
+    else:
+        return HttpResponse("Problem", status=400)
 
-    return HttpResponse("Already logged out.", status=200)
 
 # /api/v1/run_test_discrete
 @csrf_exempt
@@ -327,29 +330,9 @@ def RunTestDiscrete(request):
                 test = Test.objects.get(id=testId)
             except:
                 return HttpResponse("TestNotFound", status=404)
-            
+
             try:
-                testdata = list(test.discretemetricdata_set.all().values()) 
-                df= pd.DataFrame(testdata) # Convert to dataframe
-                contingency_table = pd.crosstab(df['variant'], df['metric']) # Create contingency table
-                all_cells_greater_than_5 = (contingency_table > 5).all().all() # Check if all cells are greater than 5
-                if all_cells_greater_than_5:
-                    p_val=chi_square_test(contingency_table)
-                else:
-                    p_val=fisher_pval(contingency_table)
-
-
-                sample_size =len(testdata)
-                conversion_rates = contingency_table[1] / contingency_table.sum(axis=1) * 100
-                response_data = {
-                    'data':testdata,
-                    'p_val':p_val,
-                    'sample_size':sample_size,
-                    'conv_rate_a':conversion_rates['A'],
-                    'conv_rate_b':conversion_rates['B'],
-                    'mean':df['metric'].mean(),
-                    'median':df['metric'].median(),
-                }
+                response_data = run_discrete_test(test)
             except Exception as e:
                 print(e)
                 return HttpResponse("ErrorWhileCreateObject", status=500)
@@ -375,30 +358,34 @@ def RunTestContinuous(request):
                 test = Test.objects.get(id=testId)
             except:
                 return HttpResponse("TestNotFound", status=404)
-            
+
             try:
-                testdata = list(test.continuousmetricdata_set.sort_by("dateTime").all()) # Get data sorted by date
-                df= pd.DataFrame.from_records(testdata) # Convert to dataframe
-                group_a = df[df['variant'] == 'A']['metric'].dropna()
-                group_b = df[df['variant'] == 'B']['metric'].dropna()
-                t_score=None
-                if is_normal(df,group_a,alpha=alpha) and is_normal(df,group_b,alpha=alpha):
-                    if check_variances(group_a,group_b):
-                        t_score,p_val = perform_t_test(group_a, group_b)
-                    else:    
-                        t_score,p_val = perform_welch_t_test(df)
+                testdata = list(
+                    test.continuousmetricdata_set.sort_by("dateTime").all()
+                )  # Get data sorted by date
+                df = pd.DataFrame.from_records(testdata)  # Convert to dataframe
+                group_a = df[df["variant"] == "A"]["metric"].dropna()
+                group_b = df[df["variant"] == "B"]["metric"].dropna()
+                t_score = None
+                if is_normal(df, group_a, alpha=alpha) and is_normal(
+                    df, group_b, alpha=alpha
+                ):
+                    if check_variances(group_a, group_b):
+                        t_score, p_val = perform_t_test(group_a, group_b)
+                    else:
+                        t_score, p_val = perform_welch_t_test(df)
                 else:
                     p_val = perform_mann_whitney_u_test(group_a, group_b)
                     mean_a = np.mean(rankdata(group_a))
                     mean_b = np.mean(rankdata(group_b))
-                sample_size =testdata.count()
+                sample_size = testdata.count()
                 response_data = {
-                    'data':testdata,
-                    'p_val':p_val,
-                    't_score':t_score, # Only for t-test
-                    'sample_size':sample_size,
-                    'mean':df['metric'].mean(),
-                    'median':df['metric'].median(),
+                    "data": testdata,
+                    "p_val": p_val,
+                    "t_score": t_score,  # Only for t-test
+                    "sample_size": sample_size,
+                    "mean": df["metric"].mean(),
+                    "median": df["metric"].median(),
                 }
             except Exception as e:
                 print(e)
@@ -409,53 +396,64 @@ def RunTestContinuous(request):
     return HttpResponse("UnAuthorized", status=401)
 
 
-# /api/v1/add_continous_bulk
+# /api/v1/tests/<test_id:int>/add_bulk
 @csrf_exempt
-def AddContinousBulk(request):
+def AddBulkCSV(request, test_id):
+    if request.method not in ["POST","PATCH"]:
+        return HttpResponse("Method not Allowed", status=405)
+
     # Check for authentication
     if not is_authenticated(request):
         return HttpResponse("UnAuthorized", status=401)
 
-
     # Check if a file is uploaded
-    if 'file' not in request.FILES:
+    if "file" not in request.FILES:
         return HttpResponse("No file uploaded!", status=400)
 
-
-    if request.method == "POST" or request.method == "PATCH":
-        file = request.FILES['file']
-        decoded_file = file.read().decode('utf-8').splitlines()
-        reader = csv.DictReader(decoded_file)
-
-        data_list = [ContinuousMetricData(test_id=row['test_id'], variant=row['variant'], metric=row['metric']) for row in reader]
-        ContinuousMetricData.objects.bulk_create(data_list)
-
-        return JsonResponse({"message": "Data added successfully."}, status=201)
-    # return internal server error HttpResponse
-    return HttpResponse("Internal Server Error", status=500)
-
-# /api/v1/add_discrete_bulk
-@csrf_exempt
-def AddDiscreteBulk(request):
-    # Check for authentication
-    if not is_authenticated(request):
+    try:
+        test = Test.objects.get(id=test_id)
+    except:
+        return HttpResponse("TestNotFound", status=404)
+    
+    if(test.user != request.user):
         return HttpResponse("UnAuthorized", status=401)
 
+    file = request.FILES["file"]
+    lines = file.read().splitlines()
+    reader = csv.DictReader(line.decode("utf-8") for line in lines)
 
-    # Check if a file is uploaded
-    if 'file' not in request.FILES:
-        return HttpResponse("No file uploaded!", status=400)
+    if test.type == "discrete":
+        data_list = [
+            DiscreteMetricData(
+                test_id=test.id,
+                variant=row["variant"],
+                metric=row["metric"],
+                date=row["date"],
+            )
+            for row in reader
+        ]
 
-    if request.method == "POST" or request.method == "PATCH":
+        try:
+            DiscreteMetricData.objects.bulk_create(data_list)
+        except Exception as e:
+            print(e)
+            return HttpResponse("ErrorWhileCreateObject", status=500)
+    else:
+        data_list = [
+            ContinuousMetricData(
+                test_id=test.id,
+                variant=row["variant"],
+                metric=row["metric"],
+                date=row["date"],
+            )
+            for row in reader
+        ]
+        try:
+            ContinuousMetricData.objects.bulk_create(data_list)
+        except Exception as e:
+            print(e)
+            return HttpResponse("ErrorWhileCreateObject", status=500)
 
-        file = request.FILES['file']
-        lines = file.read().splitlines()
-        reader = csv.DictReader(line.decode('utf-8') for line in lines)
-
-
-        data_list = [DiscreteMetricData(test_id=row['test_id'], variant=row['variant'], metric=row['metric'],dateTime=datetime.datetime.now()) for row in reader]
-        print(data_list)
-        DiscreteMetricData.objects.bulk_create(data_list)
-
-        return JsonResponse({"message": "Data added successfully."}, status=201)
-    return HttpResponse("Internal Server Error", status=500)
+    return JsonResponse(
+        {"message": "Data added successfully.", "status": True}, status=201
+    )

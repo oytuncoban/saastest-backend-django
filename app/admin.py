@@ -12,9 +12,9 @@ class TestAdmin(admin.ModelAdmin):
 admin.site.register(Test, TestAdmin)
 
 class DiscreteMetricDataAdmin(admin.ModelAdmin):
-    list_display = ('id', 'test', 'variant', 'metric', 'dateTime')
-    list_filter = ('id', 'test', 'variant', 'metric', 'dateTime')
-    search_fields = ('id', 'test', 'variant', 'metric', 'dateTime')
+    list_display = ('id', 'test', 'variant', 'metric', 'date')
+    list_filter = ('id', 'test', 'variant', 'metric', 'date')
+    search_fields = ('id', 'test', 'variant', 'metric', 'date')
     readonly_fields=('id',)
 
 admin.site.register(DiscreteMetricData, DiscreteMetricDataAdmin)
